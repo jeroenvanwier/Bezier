@@ -1,6 +1,6 @@
 function setup() {
 	canvas = document.getElementById("mainCanvas");
-	glContext = canvas.getContext("webgl");
+	gl = canvas.getContext("webgl");
 	
 	if (glContext === null) {
 		alert("WebGL not supported by browser");
