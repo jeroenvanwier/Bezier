@@ -8,13 +8,51 @@ function draw() {
     
     gl.useProgram(programInfo.program);
     
-    gl.uniform1f(programInfo.uniformLocations.clientWidth, document.body.clientWidth * 1.0);
-    gl.uniform1f(programInfo.uniformLocations.clientHeight, document.body.clientHeight * 1.0);
+    const canvas = document.getElementById("mainCanvas");
+    
+    gl.uniform1f(programInfo.uniformLocations.clientWidth, canvas.width * 1.0);
+    gl.uniform1f(programInfo.uniformLocations.clientHeight, canvas.height * 1.0);
     
     for (let i = 0; i < bezierPoints.length; i++) {
-        point = bezierPoints[i];
-        drawCircle(point.x, point.y, 10);
+        drawBezierPoint(bezierPoints[i]);
+        if (i > 0) {
+            drawBezierCurve(bezierPoints[i-1], bezierPoints[i]);
+        }
     }
+}
+
+function drawBezierCurve(a, b) {
+    const points = [a.center.x, a.center.y];
+    const i_max = 100;
+    const p1 = a.center;
+    const p2 = a.pOut;
+    const p3 = b.pIn;
+    const p4 = b.center;
+    for (let i = 1; i < 100; i++) {
+        t = i / i_max;
+        x = (1.0-t)*(1.0-t)*(1.0-t)*p1.x + 3*t*(1.0-t)*(1.0-t)*p2.x + 3*t*t*(1.0-t)*p3.x + t*t*t*p4.x;
+        y = (1.0-t)*(1.0-t)*(1.0-t)*p1.y + 3*t*(1.0-t)*(1.0-t)*p2.y + 3*t*t*(1.0-t)*p3.y + t*t*t*p4.y;
+        points.push(x, y);
+    }
+    points.push(p4.x, p4.y);
+    const int_points = points.map(x => parseInt(x));
+    drawLine(int_points);
+}
+
+function drawBezierPoint(bezierPoint) {
+    drawCircleByPoint(bezierPoint.center);
+    drawCircleByPoint(bezierPoint.pIn);
+    drawCircleByPoint(bezierPoint.pOut);
+    drawLineByPoints(bezierPoint.pIn, bezierPoint.center);
+    drawLineByPoints(bezierPoint.pOut, bezierPoint.center);
+}
+
+function drawCircleByPoint(point, r = 10) {
+    drawCircle(point.x, point.y, r);
+}
+
+function drawLineByPoints(a, b) {
+    drawLine([a.x, a.y, b.x, b.y])
 }
 
 function drawCircle(x, y, r) {
@@ -56,15 +94,99 @@ function drawLine(positions) {
 
 function click(e) {
     if (e.buttons & 1 === 1) {
-        const x = e.clientX;
-        const y = e.clientY;
+        const x = e.offsetX;
+        const y = e.offsetY;
     
         processClick(x, y);
     }
 }
 
+function down(e) {
+    if (e.buttons & 1 === 1) {
+        const x = e.offsetX;
+        const y = e.offsetY;
+        
+        closestPoint = null;
+        pointType = 0; // 0: center, 1: pIn, 2: pOut
+        distToClosest = 0;
+        for (let i = 0; i < bezierPoints.length; i++) {
+            p = bezierPoints[i].center;
+            d = distSq(x, y, p.x, p.y);
+            if (closestPoint === null || d < distToClosest) {
+                closestPoint = bezierPoints[i];
+                distToClosest = d;
+                pointType = 0;
+            }
+            p = bezierPoints[i].pIn;
+            d = distSq(x, y, p.x, p.y);
+            if (d < distToClosest) {
+                closestPoint = bezierPoints[i];
+                distToClosest = d;
+                pointType = 1;
+            }
+            p = bezierPoints[i].pOut;
+            d = distSq(x, y, p.x, p.y);
+            if (d < distToClosest) {
+                closestPoint = bezierPoints[i];
+                distToClosest = d;
+                pointType = 2;
+            }
+        }
+        
+        if (closestPoint === null || distToClosest > 500) {
+            const newPoint = newBezierPoint(x, y);
+            bezierPoints.push(newPoint);
+            draggingPoint = newPoint;
+            draggingType = 0;
+        } else {
+            draggingPoint = closestPoint;
+            draggingType = pointType;
+            if (draggingType != 0) {
+                pComplement = (draggingType === 1) ? draggingPoint.pOut : draggingPoint.pIn;
+                draggingComplementDist = Math.sqrt(distSq(pComplement.x, pComplement.y, draggingPoint.center.x, draggingPoint.center.y));
+            }
+        }
+        
+        processClick(x, y);
+    }
+}
+
+function newBezierPoint(x, y) {
+    const offset = 150;
+    return {center:{x: x, y: y}, pIn:{x:x, y:y-offset}, pOut:{x:x, y:y+offset}};
+}
+
+draggingPoint = null;
+draggingType = 0; // 0: center, 1: pIn, 2: pOut
+draggingComplementDist = 0;
+
 function processClick(x, y) {
-    bezierPoints.push({x: x, y: y});
+    if (draggingPoint === null) {
+        return;
+    }
+    
+    if (draggingType === 0) {
+        dxIn = draggingPoint.pIn.x - draggingPoint.center.x;
+        dyIn = draggingPoint.pIn.y - draggingPoint.center.y;
+        dxOut = draggingPoint.pOut.x - draggingPoint.center.x;
+        dyOut = draggingPoint.pOut.y - draggingPoint.center.y;
+        draggingPoint.center.x = x;
+        draggingPoint.center.y = y;
+        draggingPoint.pIn.x = x + dxIn;
+        draggingPoint.pIn.y = y + dyIn;
+        draggingPoint.pOut.x = x + dxOut;
+        draggingPoint.pOut.y = y + dyOut;
+    } else {
+        p = (draggingType === 1) ? draggingPoint.pIn : draggingPoint.pOut;
+        pComplement = (draggingType === 1) ? draggingPoint.pOut : draggingPoint.pIn;
+        p.x = x;
+        p.y = y;
+        dx = p.x - draggingPoint.center.x;
+        dy = p.y - draggingPoint.center.y;
+        pDist = Math.sqrt(distSq(0, 0, dx, dy));
+        pComplement.x = draggingPoint.center.x - (dx / pDist) * draggingComplementDist;
+        pComplement.y = draggingPoint.center.y - (dy / pDist) * draggingComplementDist;
+    }
     
     draw();
 }
@@ -100,13 +222,24 @@ const fsSource = `
     }
 `;
 
+function resize() {
+    const canvas = document.getElementById("mainCanvas");
+    
+    canvas.width = canvas.clientWidth;
+    canvas.height = canvas.clientHeight;
+    
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    
+    draw();
+}
+
 function setup() {
     const canvas = document.getElementById("mainCanvas");
     
-    canvas.width = document.body.clientWidth;
-    canvas.height = document.body.clientHeight;
+    canvas.width = canvas.clientWidth;
+    canvas.height = canvas.clientHeight;
     
-    canvas.onmousedown = click;
+    canvas.onmousedown = down;
     canvas.onmousemove = click;
     
     gl = canvas.getContext("webgl");
